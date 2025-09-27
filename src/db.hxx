@@ -3,122 +3,52 @@
 #include <stack>
 #include <string>
 #include <optional>
+#include "store.hxx"
 
-class KV
+namespace DB 
+{
+
+class db 
 {
 private:
 
-  // Main KV store. 
-  std::unordered_map<std::string, std::string> kv; 
+  /* In memory DB cache.  */
+  std::unordered_map<std::string, std::string> cache; 
 
-  // Txn data, it is comitted into main KV store. 
+  /* Txn data, it is comitted into main DB store. */
   std::stack<std::unordered_map<std::string, std::optional<std::string>>> txn; 
+
+  /* Persistent store. */
+  Store store; 
 
 public:
 
-  // set api
-  void set(const std::string& key, const std::string& value)
+  db(std::string store_path) : store(Store(store_path))
   {
-    //if no txn, update the main KV store. 
-    if (txn.empty()) 
-    {
-      kv[key] = value; 
-    } 
-    else 
-    {
-      txn.top()[key] = value;
-    }
+    /* build in memory cache from persistent store. */
+    store.warmUp(cache);
   }
 
-  // get api
-  std::optional<std::string> get(const std::string& key)
-  {
-    // main store always check KV store. 
-    // optionally, we can allow to scan txn and get value.
-    if (kv.count(key))
-      return kv[key];
-    else 
-      return std::nullopt;
-  }
+  /* Set/update key/valure in the DB store .*/
+  void set(const std::string& key, const std::string& value);
 
-  // remove api
-  void remove(std::string key) 
-  {
-    // if no txn, delete from the main KV store. 
-    if (txn.empty()) 
-    {
-      kv.erase(key);
-    } 
-    else 
-    {
-      txn.top()[key] = std::nullopt;
-    }
-  }
+  /* Get Key value. */ 
+  std::optional<std::string> get(const std::string& key);
 
-  // txn begin
-  void begin()
-  {
-    txn.push({}); // start txn. 
-  }
+  /* Remove key/value from the store */
+  void remove(std::string key); 
 
-  // txn commit 
-  void commit()
-  {
-    if (txn.empty())
-    {
-      std::cout<< "empty txn" << std::endl; 
-      return;
-    }
-  
-    auto deepestTxn = txn.top(); 
-    txn.pop(); 
+  /* txn begin */
+  void begin();
 
-    if (txn.empty()) 
-    {
-      // final commit will merge into the main KV store. 
-      for (auto& [key, value] : deepestTxn)
-      {
-        if (value.has_value())
-        {
-          // update the KV
-          kv[key] = value.value();
-        }
-        else 
-        {
-          // delete the key from KV store. 
-          kv.erase(key);
-        }
-      }
-    }
-    else 
-    {
-      // merge into one level above to the txn
-      for (auto& [key, value] : deepestTxn)
-      {
-        txn.top()[key] = value;
-      }
-   }
-  }
+  /* txn commit */
+  void commit();
 
-  // txn rollback
-  void rollback()
-  {
-    if (txn.empty())
-    {
-      std::cout<< "empty txn" << std::endl; 
-      return;
-    }
-    
-    // simply remove the entry from stack (txn).
-    txn.pop(); 
-  }
+  /* txn rollback */
+  void rollback();
 
-  void print(const std::string& key)
-  {
-    auto value = get(key); 
-    if (value.has_value())
-      std::cout << key<<"="<<value.value()<< std::endl;
-    else
-      std::cout << key<<"=<empty>"<< std::endl;
-  }
+  /* print key/value */
+  void print(const std::string& key);
 };
+
+} // DB namespace 
